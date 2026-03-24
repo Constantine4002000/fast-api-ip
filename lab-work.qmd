@@ -1,0 +1,412 @@
+---
+title: "Лабораторная работа №4. «Уровень данных в FastAPI-приложении для обработки изображений и распознавания образов"
+format: 
+  pdf:
+    documentclass: article
+    papersize: a5paper  # Формат A5
+    geometry: "left=2cm, right=2cm, top=2cm, bottom=2cm"  # Маржины для A5
+    mainfont: Calibri  # Читаемый шрифт с поддержкой кириллицы
+    monofont: DejaVuSansMono  # Monospace-шрифт для кода с поддержкой кириллицы
+    fontsize: 12pt  # Размер шрифта для удобства
+    include-in-header: 
+      - text: |
+          \usepackage{fancyhdr}
+          \pagestyle{fancy}
+          \fancyhead{} % Очистка заголовков
+          \fancyfoot[C]{\thepage} % Номера страниц по центру внизу
+          \usepackage{tocloft} % Для кастомизации оглавления
+          \addtolength{\cftbeforesecskip}{0.5em} % Дополнительный интервал между пунктами TOC
+          \usepackage{indentfirst} % Принудительный отступ для первого абзаца
+          \setlength{\parindent}{7.5mm} % Увеличенный отступ первой строки (7.5 мм)
+          \setlength{\parskip}{0pt} % Убираем лишнее пространство между абзацами
+          \usepackage{listings} % Для подсветки и переноса кода
+          \usepackage{xcolor} % Для цветов в индикаторе разрыва
+          \definecolor{gray}{rgb}{0.5,0.5,0.5} % Серый для символа разрыва
+          \lstset{
+            language=Python,  % Подсветка для Python (комментарии с #)
+            extendedchars=true,  % Поддержка расширенных символов (кириллица)
+            breaklines=true,  % Автоматический перенос длинных строк
+            breakatwhitespace=false,  % Ломать в любом месте (даже без пробелов, внутри комментариев/кода)
+            prebreak=\mbox{\color{gray}\tiny$\hookleftarrow$},  % Символ в конце строки перед разрывом
+            postbreak=\mbox{\color{gray}\tiny$\hookrightarrow$\space},  % Символ в начале продолжения строки с отступом
+            breakindent=2em,  % Отступ для продолжения строки
+            columns=fullflexible,  % Гибкие столбцы для лучшего разрыва
+            xleftmargin=0pt,  % Убрать левый маргин в боксе
+            xrightmargin=0pt,  % Убрать правый маргин в боксе
+            basicstyle=\footnotesize\ttfamily  % Меньший моноширинный шрифт для кода
+          }
+    toc: true  # Оглавление
+    toc-title: "Содержание"  # Русский заголовок оглавления
+    number-sections: false  # Отключение нумерации заголовков
+    linestretch: 1.3  # Полуторный межстрочный интервал для всего документа, включая оглавление
+    pdf-engine: xelatex  # Для кириллицы и шрифтов
+---
+
+## Лабораторная работа №4. «Уровень данных в FastAPI-приложении для обработки изображений и распознавания образов»
+
+### 1. Цель лабораторной работы
+
+Освоить создание постоянного уровня данных в многоуровневом веб-приложении на FastAPI. Научиться сохранять изображения в реляционной базе данных SQLite с помощью стандарта DB-API (PEP 249). Познакомиться с Pydantic-моделью `Picture`, содержащей объект `numpy.ndarray`, и интеграцией библиотеки OpenCV на уровне сервиса для предварительной обработки изображений. Получить навыки выполнения CRUD-операций над бинарными данными (BLOB).
+
+### 2. Обзор и теоретические основы
+
+В предыдущих лабораторных работах изображения хранились только в оперативной памяти. Такой подход удобен для прототипирования, но непригоден для реальных приложений — после перезапуска сервера все данные теряются.
+
+В этой работе мы создаём **постоянный уровень данных** — базу SQLite, которая надёжно сохраняет изображения даже после выключения компьютера. Мы строго следуем принципам, изложенным в главе 10 книги Билла Любановича «FastAPI. Веб-разработка на Python» (2024): используем трёхуровневую архитектуру приложения:
+
+-   **web/** — уровень представления (FastAPI-роутеры, HTTP-эндпоинты, валидация запросов).
+-   **service/** — уровень бизнес-логики (здесь происходит обработка изображений с помощью OpenCV и вызов уровня данных).
+-   **data/** — уровень данных (прямое взаимодействие с SQLite через DB-API).
+-   **model/** — Pydantic-модели для валидации и сериализации данных.
+
+Такое разделение позволяет: - Легко тестировать каждый уровень по отдельности.\
+- Менять базу данных (например, перейти на PostgreSQL) без изменения кода веб- и сервисного уровней.\
+- Масштабировать приложение для задач ИИ (классификация, сегментация, детекция объектов и т.д.).
+
+### 3. Структура проекта
+
+Создайте новый проект и организуйте папки **точно в таком виде** (все папки находятся на одном уровне с корнем проекта):
+
+```         
+fastapi-image-processing/
+├── data/                  # Уровень данных (SQLite + DB-API)
+│   ├── __init__.py
+│   ├── init.py
+│   ├── pictures.py
+├── db/                    # Папка для файла базы данных
+├── model/                 # Pydantic-модели
+│   ├── __init__.py
+│   └── pictures.py
+├── service/               # Бизнес-логика + OpenCV
+│   ├── __init__.py
+│   └── pictures.py
+├── src/                   # Точка входа приложения
+│   └── main.py
+├── web/                   # FastAPI-роутеры
+│   ├── __init__.py
+│   └── pictures.py
+├── requirements.txt
+├── .env
+└── README.md
+```
+
+В каждой папке-пакете (`data/`, `model/`, `service/`, `web/`) обязательно должен быть пустой файл `__init__.py`.
+
+### 4. Подробная последовательность шагов создания приложения
+
+**Шаг 1. Создайте проект и виртуальное окружение**\
+1. Создайте папку `fastapi-image-processing`.\
+2. Откройте терминал в этой папке.\
+3. Создайте виртуальное окружение:\
+`bash    python -m venv venv`\
+4. Активируйте его:\
+- Windows: `venv\Scripts\activate`\
+- macOS / Linux: `source venv/bin/activate`
+
+**Шаг 2. Установите библиотеки**\
+Создайте файл `requirements.txt` и вставьте в него:
+
+``` txt
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+opencv-python-headless
+numpy
+```
+
+Выполните команду:
+
+``` bash
+pip install -r requirements.txt
+```
+
+**Шаг 3. Создайте файл .env**\
+В корне проекта создайте файл `.env`:
+
+``` env
+PICTURES_SQLITE_DB=db/images.db
+```
+
+**Шаг 4. Создайте Pydantic-модель (model/pictures.py)**
+
+``` python
+# model/pictures.py
+from pydantic import BaseModel, Field
+import numpy as np
+from datetime import datetime
+
+class Picture(BaseModel):
+    name: str
+    img: np.ndarray
+    description: str = ""
+    dt: datetime = Field(default_factory=datetime.now)
+
+    model_config = {
+        "arbitrary_types_allowed": True  # обязательно для np.ndarray
+    }
+```
+
+**Шаг 5. Настройте подключение к SQLite (data/init.py)**
+
+``` python
+# data/init.py
+"""Инициализация подключения к базе данных SQLite."""
+import os
+from pathlib import Path
+from sqlite3 import connect, Connection, Cursor
+
+conn: Connection | None = None
+curs: Cursor | None = None
+
+def get_db(name: str | None = None, reset: bool = False) -> None:
+    """Подключаемся к файлу базы данных."""
+    global conn, curs
+    if conn and not reset:
+        return
+    if not name:
+        name = os.getenv("PICTURES_SQLITE_DB")
+        if not name:
+            top_dir = Path(__file__).resolve().parents[1]
+            db_dir = top_dir / "db"
+            db_dir.mkdir(exist_ok=True)
+            name = str(db_dir / "images.db")
+    conn = connect(name, check_same_thread=False)
+    curs = conn.cursor()
+    print(f"✅ Подключено к базе данных: {name}")
+
+get_db()
+```
+
+**Шаг 6. Реализуйте CRUD-операции (data/pictures.py)**
+
+``` python
+# data/pictures.py
+"""Уровень данных: работа с изображениями в SQLite (DB-API)."""
+
+from .init import conn, curs
+from model.pictures import Picture
+import cv2
+import numpy as np
+from datetime import datetime
+from error import Missing, Duplicate   # создайте файл error.py позже
+
+curs.execute('''
+    CREATE TABLE IF NOT EXISTS pictures(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        image_data BLOB NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+conn.commit()
+
+def row_to_model(row: tuple) -> Picture | None:
+    """Преобразует строку из БД в объект Picture (BLOB → np.ndarray)."""
+    if row is None or len(row) < 5:
+        return None
+    try:
+        _, name, description, image_bytes, created_at = row
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return None
+        dt = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S") if isinstance(created_at, str) else datetime.now()
+        return Picture(name=name, img=img, description=description or "", dt=dt)
+    except Exception:
+        return None
+
+def get_one(name: str) -> Picture | None:
+    """Получить одно изображение по имени."""
+    qry = "SELECT * FROM pictures WHERE name = ?"
+    curs.execute(qry, (name,))
+    row = curs.fetchone()
+    return row_to_model(row)
+
+def add_one(picture: Picture) -> int:
+    """Сохранить объект Picture в базу (np.ndarray → BLOB)."""
+    success, encoded_img = cv2.imencode('.png', picture.img)
+    if not success:
+        raise ValueError("Не удалось закодировать изображение")
+    image_blob = encoded_img.tobytes()
+    created_at_str = picture.dt.strftime('%Y-%m-%d %H:%M:%S')
+    curs.execute('''
+        INSERT INTO pictures (name, description, image_data, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (picture.name, picture.description, image_blob, created_at_str))
+    conn.commit()
+    return curs.lastrowid
+```
+
+**Шаг 7. Добавьте бизнес-логику (service/pictures.py)**
+
+``` python
+# service/pictures.py
+"""Уровень сервиса: бизнес-логика работы с изображениями."""
+from model.pictures import Picture
+import data.pictures as pictures_data
+
+
+def get_one(name: str) -> Picture | None:
+    """
+    Получить одно изображение по имени.
+    Возвращает объект Picture (с np.ndarray) или None.
+    """
+    return pictures_data.get_one(name=name)
+
+
+def add_one(picture: Picture) -> int:
+    """
+    Сохранить объект Picture в базу данных.
+    Возвращает id новой записи.
+    """
+    return pictures_data.add_one(picture)
+```
+
+**Шаг 8. Создайте роутеры FastAPI (web/pictures.py)**
+
+``` python
+# web/pictures.py
+from fastapi import APIRouter, UploadFile, File
+from fastapi.responses import Response
+import cv2
+import numpy as np
+from service.pictures import add_one, get_one
+from model.pictures import Picture
+from datetime import datetime
+
+router = APIRouter(prefix="/pictures", tags=["pictures"])
+
+
+@router.post("/", status_code=201)
+async def upload_picture(file: UploadFile = File(...)):
+    """Загрузка изображения."""
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    picture = Picture(
+        name=file.filename,
+        img=img,
+        description="",
+        dt=datetime.now()
+    )
+    picture_id = add_one(picture)
+    return {"message": "Изображение успешно сохранено", "id": picture_id, "name": file.filename}
+
+
+@router.get("/{name}")
+def get_picture(name: str):
+    """Получение изображения по имени."""
+    picture = get_one(name)
+    if picture is None:
+        return {"error": "Изображение не найдено"}
+    success, encoded_img = cv2.imencode('.png', picture.img)
+    return Response(content=encoded_img.tobytes(), media_type="image/png")
+```
+
+**Шаг 9. Создайте главный файл приложения (src/main.py)**
+
+``` python
+# src/main.py
+from fastapi import FastAPI
+from web.pictures import router as pictures_router
+
+app = FastAPI(title="FastAPI Image Processing Lab")
+app.include_router(pictures_router)
+
+@app.get('/')
+def top():
+    return 'top here'
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run('main:app', reload=True)
+```
+
+**Шаг 10. Запустите приложение**
+
+``` bash
+uvicorn src.main:app --reload
+```
+
+Откройте в браузере: http://127.0.0.1:8000/docs
+
+### 5. Основные команды SQLite (DB-API) в контексте изображений
+
+-   `CREATE TABLE IF NOT EXISTS pictures(...)` — создание таблицы с колонкой `image_data BLOB`.
+-   `INSERT ... VALUES (?, ?, ?, ?)` — позиционные параметры.
+-   `SELECT * FROM pictures WHERE name = ?` — получение записи.
+-   `curs.fetchone()` + `row_to_model` — преобразование BLOB в `np.ndarray`.
+-   `conn.commit()` — фиксация изменений.
+
+### 6. Как изображения записываются и выгружаются
+
+-   **Запись:** `UploadFile.read()` → `bytes` → OpenCV (`imencode`) → `BLOB` → `INSERT` (через `service` → `data`).
+-   **Выгрузка:** `SELECT image_data` → `bytes` → `cv2.imdecode` → `np.ndarray` → объект `Picture` → `Response` с `media_type="image/png"`.
+
+------------------------------------------------------------------------
+
+### Практическая часть лабораторной работы
+
+**Задание для самостоятельной реализации**
+
+1.  **Реализуйте операцию удаления изображения**\
+    Добавьте в уровень данных функцию удаления записи по имени изображения.\
+    На сервисном уровне создайте соответствующую функцию.\
+    На веб-уровне добавьте HTTP-метод DELETE по маршруту `/pictures/{name}`, который принимает имя изображения и возвращает подтверждение удаления или сообщение об ошибке.
+
+2.  **Реализуйте операцию модификации (обновления) данных изображения**\
+    Добавьте возможность обновлять метаданные изображения (например, поле `description`).\
+    На уровне данных реализуйте функцию модификации.\
+    На сервисном уровне создайте функцию, которая принимает новое описание и обновляет запись.\
+    На веб-уровне добавьте HTTP-метод PATCH (или PUT) по маршруту `/pictures/{name}`, который принимает новое описание и возвращает обновлённый объект.
+
+3.  **Реализуйте три операции обработки изображений на сервисном уровне**\
+    В файле `service/pictures.py` создайте три самостоятельные функции:
+
+    -   Преобразование изображения в градации серого (grayscale).
+    -   Выделение границ (edge detection, например, с помощью Canny).
+    -   Применение размытия (Gaussian blur).
+
+    Каждая функция должна принимать объект `Picture`, выполнять соответствующую обработку с помощью OpenCV и возвращать новый объект `Picture` с изменённым изображением (`img: np.ndarray`).
+
+4.  **Сделайте новые операции доступными через API**\
+    В файле `web/pictures.py` добавьте три новых эндпоинта (POST или GET), которые позволяют вызывать каждую из трёх операций обработки по имени изображения.\
+    После обработки изображение должно сохраняться в базе данных под тем же именем (или с новым именем, если вы решите реализовать сохранение копии).\
+    Эндпоинты должны возвращать обновлённое изображение в формате PNG.
+
+**Требования к выполнению**\
+- Все изменения должны строго соответствовать трёхуровневой архитектуре (data → service → web).\
+- Не нарушайте существующий код загрузки и получения изображений.\
+- Обработайте возможные ошибки (отсутствие изображения, некорректные данные).\
+- Проверьте работу всех новых функций через Swagger UI (`/docs`).\
+- Добавьте комментарии к новому коду в стиле PEP 8.
+
+**Что сдать на проверку**\
+1. Полный код проекта в архиве.\
+2. Скриншоты работы новых эндпоинтов в Swagger UI (DELETE, PATCH, три операции обработки).\
+3. Краткий отчёт (1–2 страницы) с описанием, какие функции вы добавили и как они работают.
+
+### Контрольные вопросы к лабораторной работе
+
+1.  Что такое трёхуровневая архитектура FastAPI-приложения и какие папки соответствуют уровням web, service, data и model?
+2.  Для чего в каждой папке-пакете (`data/`, `model/`, `service/`, `web/`) нужен файл `__init__.py`?
+3.  Какой переменной окружения задаётся путь к файлу базы данных SQLite в этом проекте?
+4.  Какие поля содержит Pydantic-модель `Picture` и почему для поля `img` необходимо указывать `arbitrary_types_allowed: True`?
+5.  Как в функции `row_to_model` происходит преобразование BLOB из SQLite в объект `numpy.ndarray`?
+6.  Какие SQL-команды используются в функции `add_one` для вставки изображения в таблицу `pictures`?
+7.  Почему в функции `add_one` используется `cv2.imencode` перед сохранением в BLOB?
+8.  В чём заключается роль сервисного уровня (`service/pictures.py`) в трёхуровневой архитектуре?
+9.  Какой HTTP-метод и маршрут используются для загрузки нового изображения?
+10. Какой HTTP-метод и маршрут используются для получения изображения по имени?
+11. Какой метод OpenCV используется для преобразования изображения в градации серого?
+12. Какой метод OpenCV используется для выделения границ (edge detection)?
+13. Какой метод OpenCV используется для применения размытия (Gaussian blur)?
+14. Какой HTTP-метод вы будете использовать для удаления изображения по имени?
+15. Какой HTTP-метод вы будете использовать для обновления описания изображения?
+16. Что произойдёт, если в функции `get_one` изображение с указанным именем отсутствует в базе?
+17. Почему в `data/pictures.py` после выполнения `INSERT` обязательно вызывается `conn.commit()`?
+18. Какой формат файла используется при кодировании изображения в функциях обработки (`imencode`)?
+19. Как вы организуете вызов трёх операций обработки изображений (grayscale, edges, blur) через API?
+20. Какие преимущества даёт разделение кода на три уровня (web → service → data) при дальнейшем развитии приложения (добавление новых алгоритмов ИИ)?
